@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H1目标完成度可视化看板 - 数据录入版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .progress-bar { transition: width 1s ease-out; }
+        .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .metric-card-green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .metric-card-orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .metric-card-blue { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .input-field { transition: all 0.2s; border: 2px solid #e5e7eb; }
+        .input-field:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- 头部 -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">📊 H1目标完成度可视化看板</h1>
+            <p class="text-gray-600">录入实际数据，实时查看完成度</p>
+            <div class="mt-4 flex justify-center items-center gap-4">
+                <span class="text-sm text-gray-500">数据周期：Week</span>
+                <input type="number" id="weekNumber" value="14" class="w-20 px-3 py-2 border-2 rounded-lg text-center font-semibold">
+                <button onclick="loadDemoData()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm">
+                    加载演示数据
+                </button>
+                <button onclick="clearAllData()" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition text-sm">
+                    清空数据
+                </button>
+            </div>
+        </div>
+
+        <!-- 总体概览卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="metric-card rounded-2xl p-6 text-white card-hover">
+                <div class="text-3xl font-bold" id="avgCompletion">0%</div>
+                <div class="text-sm opacity-80">平均完成度</div>
+            </div>
+            <div class="metric-card-green rounded-2xl p-6 text-white card-hover">
+                <div class="text-3xl font-bold" id="topPerformer">-</div>
+                <div class="text-sm opacity-80">最佳表现</div>
+            </div>
+            <div class="metric-card-orange rounded-2xl p-6 text-white card-hover">
+                <div class="text-3xl font-bold" id="needAttention">0人</div>
+                <div class="text-sm opacity-80">需关注(&lt;70%)</div>
+            </div>
+            <div class="metric-card-blue rounded-2xl p-6 text-white card-hover">
+                <div class="text-3xl font-bold" id="totalPeople">10人</div>
+                <div class="text-sm opacity-80">总人数</div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div class="bg-white rounded-2xl shadow-lg p-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">🏆 个人完成度排名</h3>
+                <canvas id="rankingChart"></canvas>
+            </div>
+            <div class="bg-white rounded-2xl shadow-lg p-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">📈 分类完成情况</h3>
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 数据录入区域 -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">📝 数据录入区</h3>
+                <div class="text-sm text-gray-500">
+                    <span class="inline-block w-3 h-3 bg-green-500 rounded-full mr-1"></span>优秀(≥90%)
+                    <span class="inline-block w-3 h-3 bg-yellow-500 rounded-full mx-1"></span>良好(70-90%)
+                    <span class="inline-block w-3 h-3 bg-red-500 rounded-full mx-1"></span>需关注(&lt;70%)
+                </div>
+            </div>
+            
+            <!-- 录入表单 -->
+            <div id="inputForms" class="space-y-6">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 详细排名表格 -->
+        <div class="bg-white rounded-2xl shadow-lg p-6">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">📋 详细排名</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-gray-600 font-semibold">排名</th>
+                            <th class="px-4 py-3 text-gray-600 font-semibold">姓名</th>
+                            <th class="px-4 py-3 text-gray-600 font-semibold">类型</th>
+                            <th class="px-4 py-3 text-gray-600 font-semibold">渠道数</th>
+                            <th class="px-4 py-3 text-gray-600 font-semibold">完成度</th>
+                            <th class="px-4 py-3 text-gray-600 font-semibold">状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 导出按钮 -->
+        <div class="mt-8 text-center">
+            <button onclick="exportData()" class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
+                📥 导出本周数据
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ========== 1. 目标配置 ==========
+        const peopleConfig = [
+            { name: "刘慧慧", type: "私域", channels: 3, targets: [
+                { name: "正价人次", target: 900, weight: 0.5 },
+                { name: "新增粉丝", target: 60000, weight: 0.25 },
+                { name: "企微新增", target: 1500, weight: 0.25 }
+            ]},
+            { name: "郭楚怡", type: "公域", channels: 3, targets: [
+                { name: "Leads量", target: 500, weight: 0.3 },
+                { name: "正价人次", target: 750, weight: 0.4 },
+                { name: "企微新增", target: 2000, weight: 0.3 }
+            ]},
+            { name: "张克楠", type: "转化运营", channels: 6, isMultiChannel: true, channelWeights: [0.407, 0.165, 0.113, 0.259, 0.045, 0.011], targets: [
+                { name: "网校投放", target: 12974, target2: 100000, target3: 232, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "网校站内", target: 5272, target2: 100000, target3: 270, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "xwx站内", target: 3610, target2: 100000, target3: 345, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "yk站内", target: 8254, target2: 100000, target3: 241, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "应用商店", target: 1437, target2: 100000, target3: 170, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "活动增长", target: 350, target2: 100000, target3: 262, weight1: 0.4, weight2: 0.3, weight3: 0.3 }
+            ]},
+            { name: "马俊波", type: "转化运营", channels: 2, isMultiChannel: true, channelWeights: [0.582, 0.418], targets: [
+                { name: "特训-商务X", target: 2404, target2: 60000, target3: 260, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "特训-商务社群", target: 1729, target2: 60000, target3: 180, weight1: 0.4, weight2: 0.3, weight3: 0.3 }
+            ]},
+            { name: "基莉", type: "转化运营", channels: 3, isMultiChannel: true, channelWeights: [0.433, 0.316, 0.251], targets: [
+                { name: "特训-商务-B站", target: 1470, target2: 60000, target3: 210, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "特训-商务-KOC", target: 1076, target2: 54000, target3: 170, weight1: 0.4, weight2: 0.3, weight3: 0.3 },
+                { name: "特训-商务-大搜", target: 1322, target2: 60000, target3: 450, weight1: 0.4, weight2: 0.3, weight3: 0.3 }
+            ]},
+            { name: "徐颖", type: "转化运营", channels: 1, targets: [
+                { name: "私海热点", target: 36805, target2: 35000, target3: 2.6, weight1: 0.4, weight2: 0.3, weight3: 0.3 }
+            ]},
+            { name: "杜海奎", type: "前端渠道", channels: 4, isMultiChannel: true, channelWeights: [0.278, 0.636, 0.071, 0.015], targets: [
+                { name: "xwx站内", target: 3610, target2: 1.7, target3: 15301, weight1: 0.4, weight2: 0.2, weight3: 0.4 },
+                { name: "yk站内", target: 8254, target2: 1.7, target3: 48779, weight1: 0.4, weight2: 0.2, weight3: 0.4 },
+                { name: "应用商店", target: 1437, target2: 1.7, target3: 9695, weight1: 0.4, weight2: 0.2, weight3: 0.4 },
+                { name: "活动增长", target: 350, target2: 1.7, target3: 1776, weight1: 0.4, weight2: 0.2, weight3: 0.4 }
+            ]},
+            { name: "郭思琪", type: "前端渠道", channels: 2, isMultiChannel: true, channelWeights: [0.758, 0.242], targets: [
+                { name: "特训-商务X", target: 4133, target2: 1.1, target3: 10654, weight1: 0.3, weight2: 0.4, weight3: 0.3 },
+                { name: "特训-商务-大搜", target: 1322, target2: 1.4, target3: 16800, weight1: 0.3, weight2: 0.4, weight3: 0.3 }
+            ]},
+            { name: "王佳琦", type: "前端渠道", channels: 1, targets: [
+                { name: "特训-商务-B站", target: 1470, target2: 1.3, target3: 19830, weight1: 0.3, weight2: 0.4, weight3: 0.3 }
+            ]},
+            { name: "贾鹏飞", type: "前端渠道", channels: 1, targets: [
+                { name: "特训-商务-KOC", target: 1076, target2: 1.2, target3: 6200, weight1: 0.3, weight2: 0.4, weight3: 0.3 }
+            ]}
+        ];
+
+        // 存储实际数据
+        let actualData = {};
+
+        // ========== 2. 生成录入表单 ==========
+        function generateInputForms() {
+            const container = document.getElementById('inputForms');
+            container.innerHTML = peopleConfig.map((person, pIdx) => `
+                <div class="border-2 border-gray-200 rounded-xl p-4 bg-gray-50" id="person-${pIdx}">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="font-bold text-lg text-gray-800">
+                            ${person.name} 
+                            <span class="text-sm font-normal text-gray-500">(${person.type})</span>
+                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full ml-2">${person.channels}个${person.isMultiChannel ? '渠道' : '目标'}</span>
+                        </h4>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold text-blue-600" id="completion-${pIdx}">0%</div>
+                            <div class="text-xs text-gray-500">综合完成度</div>
+                        </div>
+                    </div>
+                    <div class="grid gap-3">
+                        ${person.targets.map((t, tIdx) => `
+                            <div class="bg-white rounded-lg p-3 border">
+                                <div class="font-medium text-gray-700 mb-2">${t.name}</div>
+                                <div class="grid grid-cols-3 gap-2 text-sm">
+                                    <div>
+                                        <label class="text-gray-500 text-xs">目标: ${t.target.toLocaleString()}</label>
+                                        <input type="number" placeholder="实际完成" 
+                                            class="input-field w-full px-2 py-1 rounded mt-1"
+                                            onchange="updatePersonData(${pIdx}, ${tIdx}, 'actual1', this.value)"
+                                            id="input-${pIdx}-${tIdx}-1">
+                                    </div>
+                                    ${t.target2 ? `
+                                    <div>
+                                        <label class="text-gray-500 text-xs">目标2: ${t.target2.toLocaleString()}</label>
+                                        <input type="number" placeholder="实际完成" 
+                                            class="input-field w-full px-2 py-1 rounded mt-1"
+                                            onchange="updatePersonData(${pIdx}, ${tIdx}, 'actual2', this.value)"
+                                            id="input-${pIdx}-${tIdx}-2">
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-500 text-xs">目标3: ${t.target3.toLocaleString()}</label>
+                                        <input type="number" placeholder="实际完成" 
+                                            class="input-field w-full px-2 py-1 rounded mt-1"
+                                            onchange="updatePersonData(${pIdx}, ${tIdx}, 'actual3', this.value)"
+                                            id="input-${pIdx}-${tIdx}-3">
+                                    </div>
+                                    ` : `
+                                    <div class="col-span-2 text-gray-400 text-xs flex items-center">单指标目标，只需填写第一列</div>
+                                    `}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ========== 3. 更新个人数据 ==========
+        function updatePersonData(personIdx, targetIdx, field, value) {
+            const person = peopleConfig[personIdx];
+            if (!actualData[person.name]) {
+                actualData[person.name] = person.targets.map(() => ({ actual1: 0, actual2: 0, actual3: 0 }));
+            }
+            actualData[person.name][targetIdx][field] = parseFloat(value) || 0;
+            
+            // 实时计算该人完成度
+            const completion = calculatePersonCompletion(person);
+            document.getElementById(`completion-${personIdx}`).textContent = completion.toFixed(1) + '%';
+            document.getElementById(`completion-${personIdx}`).className = `text-2xl font-bold ${completion >= 90 ? 'text-green-600' : completion >= 70 ? 'text-yellow-600' : 'text-red-600'}`;
+            
+            // 更新总览
+            updateOverview();
+        }
+
+        // ========== 4. 计算完成度 ==========
+        function calculatePersonCompletion(person) {
+            const data = actualData[person.name];
+            if (!data) return 0;
+            
+            if (person.isMultiChannel) {
+                let totalCompletion = 0;
+                data.forEach((d, idx) => {
+                    const t = person.targets[idx];
+                    const c1 = (d.actual1 / t.target) * t.weight1;
+                    const c2 = t.target2 ? (d.actual2 / t.target2) * t.weight2 : 0;
+                    const c3 = t.target3 ? (d.actual3 / t.target3) * t.weight3 : 0;
+                    const channelCompletion = c1 + c2 + c3;
+                    totalCompletion += channelCompletion * person.channelWeights[idx];
+                });
+                return Math.min(totalCompletion * 100, 150);
+            } else {
+                // 单渠道或多目标单指标
+                let total = 0;
+                data.forEach((d, idx) => {
+                    const t = person.targets[idx];
+                    if (t.weight) {
+                        // 刘慧慧、郭楚怡模式
+                        total += (d.actual1 / t.target) * t.weight;
+                    } else {
+                        // 单渠道多指标
+                        const c1 = (d.actual1 / t.target) * t.weight1;
+                        const c2 = t.target2 ? (d.actual2 / t.target2) * t.weight2 : 0;
+                        const c3 = t.target3 ? (d.actual3 / t.target3) * t.weight3 : 0;
+                        total += c1 + c2 + c3;
+                    }
+                });
+                return person.channels === 1 ? Math.min(total * 100, 150) : Math.min((total / person.channels) * 100, 150);
+            }
+        }
+
+        // ========== 5. 更新总览 ==========
+        let rankingChart = null;
+        let categoryChart = null;
+
+        function updateOverview() {
+            const results = peopleConfig.map(p => ({
+                name: p.name,
+                type: p.type,
+                channels: p.channels,
+                completion: calculatePersonCompletion(p)
+            })).sort((a, b) => b.completion - a.completion);
+
+            // 更新卡片
+            const avg = results.reduce((sum, r) => sum + r.completion, 0) / results.length;
+            document.getElementById('avgCompletion').textContent = avg.toFixed(1) + '%';
+            document.getElementById('topPerformer').textContent = results[0]?.name || '-';
+            const needAttn = results.filter(r => r.completion < 70).length;
+            document.getElementById('needAttention').textContent = needAttn + '人';
+
+            // 更新图表
+            updateCharts(results);
+            
+            // 更新表格
+            updateTable(results);
+        }
+
+        function updateCharts(results) {
+            // 排名图
+            const ctx1 = document.getElementById('rankingChart').getContext('2d');
+            if (rankingChart) rankingChart.destroy();
+            rankingChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: results.map(r => r.name),
+                    datasets: [{
+                        label: '完成度(%)',
+                        data: results.map(r => r.completion.toFixed(1)),
+                        backgroundColor: results.map(r => 
+                            r.completion >= 90 ? '#10b981' :
+                            r.completion >= 70 ? '#f59e0b' : '#ef4444'
+                        ),
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true, max: 150 } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            // 分类图
+            const categoryData = {};
+            results.forEach(r => {
+                if (!categoryData[r.type]) categoryData[r.type] = { sum: 0, count: 0 };
+                categoryData[r.type].sum += r.completion;
+                categoryData[r.type].count += 1;
+            });
+            
+            const ctx2 = document.getElementById('categoryChart').getContext('2d');
+            if (categoryChart) categoryChart.destroy();
+            categoryChart = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(categoryData),
+                    datasets: [{
+                        data: Object.values(categoryData).map(v => (v.sum / v.count).toFixed(1)),
+                        backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#3b82f6']
+                    }]
+                },
+                options: { 
+                    responsive: true,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.raw + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTable(results) {
+            const tbody = document.getElementById('detailTable');
+            tbody.innerHTML = results.map((r, idx) => `
+                <tr class="border-b hover:bg-gray-50 fade-in">
+                    <td class="px-4 py-3 font-bold ${idx < 3 ? 'text-yellow-600' : 'text-gray-600'} text-xl">
+                        ${idx < 3 ? ['🥇','🥈','🥉'][idx] : (idx + 1)}
+                    </td>
+                    <td class="px-4 py-3 font-semibold text-lg">${r.name}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-1 rounded text-sm ${r.type === '私域' ? 'bg-pink-100 text-pink-700' : r.type === '公域' ? 'bg-blue-100 text-blue-700' : r.type === '转化运营' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
+                            ${r.type}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-center">${r.channels}</td>
+                    <td class="px-4 py-3">
+                        <div class="flex items-center">
+                            <div class="w-24 bg-gray-200 rounded-full h-2.5 mr-3">
+                                <div class="h-2.5 rounded-full ${r.completion >= 90 ? 'bg-green-500' : r.completion >= 70 ? 'bg-yellow-500' : 'bg-red-500'}" 
+                                     style="width: ${Math.min(r.completion, 100)}%"></div>
+                            </div>
+                            <span class="font-bold text-lg ${r.completion >= 90 ? 'text-green-600' : r.completion >= 70 ? 'text-yellow-600' : 'text-red-600'}">
+                                ${r.completion.toFixed(1)}%
+                            </span>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="px-3 py-1.5 rounded-full text-sm font-medium ${r.completion >= 90 ? 'bg-green-100 text-green-700' : r.completion >= 70 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
+                            ${r.completion >= 90 ? '优秀' : r.completion >= 70 ? '良好' : '需关注'}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ========== 6. 工具函数 ==========
+        function loadDemoData() {
+            // 加载演示数据（50%-120%随机）
+            peopleConfig.forEach((person, pIdx) => {
+                person.targets.forEach((t, tIdx) => {
+                    const factor = 0.5 + Math.random() * 0.7;
+                    const v1 = Math.round(t.target * factor);
+                    document.getElementById(`input-${pIdx}-${tIdx}-1`).value = v1;
+                    updatePersonData(pIdx, tIdx, 'actual1', v1);
+                    
+                    if (t.target2) {
+                        const v2 = Math.round(t.target2 * factor * 0.9);
+                        document.getElementById(`input-${pIdx}-${tIdx}-2`).value = v2;
+                        updatePersonData(pIdx, tIdx, 'actual2', v2);
+                    }
+                    if (t.target3) {
+                        const v3 = Math.round(t.target3 * factor * 0.85);
+                        document.getElementById(`input-${pIdx}-${tIdx}-3`).value = v3;
+                        updatePersonData(pIdx, tIdx, 'actual3', v3);
+                    }
+                });
+            });
+        }
+
+        function clearAllData() {
+            if (confirm('确定要清空所有数据吗？')) {
+                actualData = {};
+                document.querySelectorAll('input[type="number"]').forEach(input => input.value = '');
+                peopleConfig.forEach((p, idx) => {
+                    document.getElementById(`completion-${idx}`).textContent = '0%';
+                    document.getElementById(`completion-${idx}`).className = 'text-2xl font-bold text-blue-600';
+                });
+                updateOverview();
+            }
+        }
+
+        function exportData() {
+            const week = document.getElementById('weekNumber').value;
+            let csv = `Week ${week} 数据导出\n姓名,类型,渠道/目标,指标1实际,指标2实际,指标3实际,综合完成度\n`;
+            
+            peopleConfig.forEach(p => {
+                const data = actualData[p.name];
+                const completion = calculatePersonCompletion(p);
+                if (data) {
+                    data.forEach((d, idx) => {
+                        csv += `${p.name},${p.type},${p.targets[idx].name},${d.actual1},${d.actual2},${d.actual3},${completion.toFixed(1)}%\n`;
+                    });
+                }
+            });
+            
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Week${week}_目标完成数据.csv`;
+            link.click();
+        }
+
+        // ========== 7. 初始化 ==========
+        window.onload = function() {
+            generateInputForms();
+            updateOverview();
+        };
+    </script>
+</body>
+</html>
